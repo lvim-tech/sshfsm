@@ -6,7 +6,7 @@ SSHFS Manager is a cli tool to mount and unmount remote directories.
 
 1. Predefined options (default explorer and editor) and sshfs configs
 2. Intuitive menu
-3. Exploring mounted directory
+3. Exploring mounted directory from menu
 4. Editing configuration file from menu
 
 ---
