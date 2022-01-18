@@ -1,0 +1,321 @@
+#!/bin/bash
+BLUE="\033[0;34m"
+RED="\033[0;31m"
+GREEN="\033[0;32m"
+RESET="\033[0m"
+
+_MOUNT="Mount"
+_UMOUNT="Umount"
+_EXPLORER="Explorer"
+_EDIT="Edit config file"
+_BACK="Back to Main Menu"
+_HELP="Help"
+_EXIT="Exit"
+_ERROR_MESSAGE=""
+_SUCCESS_MESSAGE=""
+
+SSHFSM_JSON=$HOME/.config/sshfsm/config.json
+SSHFSM_HELP=$HOME/.config/sshfsm/help.txt
+
+if [ ! -e "$SSHFSM_JSON" ]; then
+	mkdir -p "$(dirname "$SSHFSM_JSON")" && touch "$SSHFSM_JSON"
+	cat >"$SSHFSM_JSON" <<EOF
+{
+    "options": {
+        "editor": "xdg-open",
+        "explorer": "xdg-open"
+    },
+    "points": {}
+}
+EOF
+fi
+
+if [ ! -e "$SSHFSM_HELP" ]; then
+	mkdir -p "$(dirname "$SSHFSM_HELP")" && touch "$SSHFSM_HELP"
+	cat >"$SSHFSM_HELP" <<EOF
+== SSHFS MANAGER ================================================
+
+
+-- INFO
+
+SSHFS Manager is a cli tool to mount and unmount remote directories.
+
+1) Predefined options (default explorer and editor) and sshfs configs
+
+2) Intuitive menu
+
+3) Exploring mounted directory from menu
+
+4) Editing configuration file from menu
+
+Requirements: rjshon, sshfs, unmount
+
+-- HOW TO USE
+
+Just download sshfsm and runing it (script automaticaly create config file - ~/.config/sshfsm/config.json).
+
+If you want to add sshfsm to your PATH, add this to your bashrc:
+
+export PATH=\$PATH:/path/to/sshfsm
+
+** Default options
+
+"options": {
+
+    "editor": "xdg-open", // you can choice "vim"
+
+    "explorer": "xdg-open" // you can choice "vifm"
+
+}
+
+** How to write points
+
+"points": {
+
+    "NAME OF YOUR POINT": {
+
+        "host": "example.com", // required
+
+        "port": "22", // not required, default 22
+
+        "user": "user_name", // required
+
+        "remote_directory": "example.com", // required
+
+        "local_directory": "example.com", // required
+
+        "options": "allow_other" // not required, default null
+
+    }
+
+}
+EOF
+fi
+
+GET_OPTIONS() {
+	EDITOR=$(jshon -e options -e editor -u -Q <"$SSHFSM_JSON")
+	EXPLORER=$(jshon -e options -e explorer -u -Q <"$SSHFSM_JSON")
+	LENGTHS=$(jshon -e points -l -Q <"$SSHFSM_JSON")
+	IFS=$'\n'
+	LIST_POINTS=$(jshon -e points -k -S -Q <"${SSHFSM_JSON}")
+	LIST_MOUNTED_POINTS=()
+	LIST_UMOUNTED_POINTS=()
+	for i in $LIST_POINTS; do
+		LOCAL_DIRECTORY=$(jshon -e points -e "$i" -e "local_directory" -u -Q <"${SSHFSM_JSON}")
+		RESULT=$(IS_MOUNTED "$LOCAL_DIRECTORY")
+		if [[ $RESULT == 1 ]]; then
+			LIST_MOUNTED_POINTS+=("$i")
+		else
+			LIST_UMOUNTED_POINTS+=("$i")
+		fi
+	done
+}
+
+IS_MOUNTED() {
+	if (($(mount | grep -c "$1") > 0)); then
+		echo 1
+	else
+		echo 0
+	fi
+}
+
+MENU_MAIN() {
+	clear
+	GET_OPTIONS
+	echo -e "${BLUE}== MAIN MENU ====================================${RESET}"
+	echo ""
+	if [ -n "$_ERROR_MESSAGE" ]; then
+		echo -e "$_ERROR_MESSAGE"
+		echo ""
+		_ERROR_MESSAGE=""
+	fi
+	if [[ $LENGTHS -le 0 ]]; then
+		keys=("$_EDIT" "$_HELP" "$_EXIT")
+	else
+		keys=("$_MOUNT" "$_UMOUNT" "$_EXPLORER" "$_EDIT" "$_HELP" "$_EXIT")
+	fi
+	PS3="Please enter your choice: "
+	select action in "${keys[@]}"; do
+		if printf '%s\n' "${keys[@]}" | grep -x -q "$action"; then
+			case "$action" in
+			"$_MOUNT")
+				MENU_MOUNT
+				break
+				;;
+			"$_UMOUNT")
+				MENU_UMOUNT
+				break
+				;;
+			"$_EXPLORER")
+				MENU_EXPLORER
+				break
+				;;
+			"$_EDIT")
+				EDIT
+				MENU_MAIN
+				break
+				;;
+			"$_HELP")
+				HELP
+				# MENU_MAIN
+				# break
+				;;
+			"$_EXIT")
+				EXIT
+				break
+				;;
+			esac
+		else
+			_ERROR_MESSAGE="${RED}invalid option!${RESET}"
+			MENU_MAIN
+			# break
+		fi
+	done
+}
+
+MENU_MOUNT() {
+	clear
+	GET_OPTIONS
+	echo -e "${BLUE}== MOUNT ========================================${RESET}"
+	echo ""
+	if [ -n "$_ERROR_MESSAGE" ]; then
+		echo -e "$_ERROR_MESSAGE"
+		echo ""
+		_ERROR_MESSAGE=""
+	fi
+	if [ -n "$_SUCCESS_MESSAGE" ]; then
+		echo -e "$_SUCCESS_MESSAGE"
+		echo ""
+		_SUCCESS_MESSAGE=""
+	fi
+	LIST_UMOUNTED_POINTS+=("$_BACK")
+	LIST_UMOUNTED_POINTS+=("$_EXIT")
+	select POINT in "${LIST_UMOUNTED_POINTS[@]}"; do
+		if printf '%s\n' "${LIST_UMOUNTED_POINTS[@]}" | grep -x -q "$POINT"; then
+			if [[ "$POINT" == "$_BACK" ]]; then
+				MENU_MAIN
+			elif [[ "$POINT" == "$_EXIT" ]]; then
+				EXIT
+			else
+				HOST=$(jshon -e points -e "$POINT" -e "host" -u -Q <"${SSHFSM_JSON}")
+				PORT=$(jshon -e points -e "$POINT" -e "port" -u -Q <"${SSHFSM_JSON}")
+				USER=$(jshon -e points -e "$POINT" -e "user" -u -Q <"${SSHFSM_JSON}")
+				REMOTE_DIRECTORY=$(jshon -e points -e "$POINT" -e "remote_directory" -u -Q <"${SSHFSM_JSON}")
+				LOCAL_DIRECTORY=$(jshon -e points -e "$POINT" -e "local_directory" -u -Q <"${SSHFSM_JSON}")
+				OPTIONS=$(jshon -e points -e "$POINT" -e "options" -u -Q <"${SSHFSM_JSON}")
+				if [ -z "$PORT" ]; then
+					PORT=22
+				fi
+				if [ -z "$OPTIONS" ]; then
+					sshfs -p "$PORT" "$USER"@"$HOST":"$REMOTE_DIRECTORY" "$LOCAL_DIRECTORY"
+				else
+					sshfs -o "$OPTIONS" -p "$PORT" "$USER"@"$HOST":"$REMOTE_DIRECTORY" "$LOCAL_DIRECTORY"
+				fi
+				RESULT=$(IS_MOUNTED "$LOCAL_DIRECTORY")
+				if [[ $RESULT == 1 ]]; then
+					_SUCCESS_MESSAGE="${GREEN}$HOST has been mounted!${RESET}"
+				else
+					_ERROR_MESSAGE="${RED}$HOST has not been mounted!${RESET}"
+				fi
+				MENU_MOUNT
+			fi
+		else
+			_ERROR_MESSAGE="${RED}Invalid option!${RESET}"
+			MENU_MOUNT
+			# break
+		fi
+	done
+}
+
+MENU_UMOUNT() {
+	clear
+	GET_OPTIONS
+	echo -e "${BLUE}== UMOUNT =======================================${RESET}"
+	echo ""
+	if [ -n "$_ERROR_MESSAGE" ]; then
+		echo -e "$_ERROR_MESSAGE"
+		echo ""
+		_ERROR_MESSAGE=""
+	fi
+	if [ -n "$_SUCCESS_MESSAGE" ]; then
+		echo -e "$_SUCCESS_MESSAGE"
+		echo ""
+		_SUCCESS_MESSAGE=""
+	fi
+	if [[ ${#LIST_MOUNTED_POINTS[@]} == 0 ]]; then
+		echo -e "${RED}There is nothing to umount!${RESET}"
+		echo ""
+	fi
+	LIST_MOUNTED_POINTS+=("$_BACK")
+	LIST_MOUNTED_POINTS+=("$_EXIT")
+	select POINT in "${LIST_MOUNTED_POINTS[@]}"; do
+		if printf '%s\n' "${LIST_MOUNTED_POINTS[@]}" | grep -x -q "$POINT"; then
+			if [[ "$POINT" == "$_BACK" ]]; then
+				MENU_MAIN
+			elif [[ "$POINT" == "$_EXIT" ]]; then
+				EXIT
+			else
+				HOST=$(jshon -e points -e "$POINT" -e "host" -u -Q <"${SSHFSM_JSON}")
+				LOCAL_DIRECTORY=$(jshon -e points -e "$POINT" -e "local_directory" -u -Q <"${SSHFSM_JSON}")
+				umount "$LOCAL_DIRECTORY"
+				RESULT=$(IS_MOUNTED "$LOCAL_DIRECTORY")
+				if [[ $RESULT == 0 ]]; then
+					_SUCCESS_MESSAGE="${GREEN}$HOST has been umounted!${RESET}"
+				else
+					_ERROR_MESSAGE="${RED}$HOST has not not been mounted!${RESET}"
+				fi
+				MENU_UMOUNT
+			fi
+		else
+			_ERROR_MESSAGE="${RED}invalid option!${RESET}"
+			MENU_UMOUNT
+		fi
+	done
+}
+
+MENU_EXPLORER() {
+	clear
+	GET_OPTIONS
+	echo -e "${BLUE}== EXPLORER ====================================${RESET}"
+	echo ""
+	if [ -n "$_ERROR_MESSAGE" ]; then
+		echo -e "$_ERROR_MESSAGE"
+		echo ""
+		_ERROR_MESSAGE=""
+	fi
+	if [[ ${#LIST_MOUNTED_POINTS[@]} == 0 ]]; then
+		echo -e "${RED}There is nothing to explore!${RESET}"
+		echo ""
+	fi
+	LIST_MOUNTED_POINTS+=("$_BACK")
+	LIST_MOUNTED_POINTS+=("$_EXIT")
+	select POINT in "${LIST_MOUNTED_POINTS[@]}"; do
+		if printf '%s\n' "${LIST_MOUNTED_POINTS[@]}" | grep -x -q "$POINT"; then
+			if [[ "$POINT" == "$_BACK" ]]; then
+				MENU_MAIN
+			elif [[ "$POINT" == "$_EXIT" ]]; then
+				EXIT
+			else
+				LOCAL_DIRECTORY=$(jshon -e points -e "$POINT" -e "local_directory" -u -Q <"${SSHFSM_JSON}")
+				$EXPLORER "$LOCAL_DIRECTORY"
+			fi
+		else
+			_ERROR_MESSAGE="${RED}invalid option!${RESET}"
+			MENU_EXPLORER
+		fi
+	done
+}
+
+EDIT() {
+	$EDITOR "$SSHFSM_JSON"
+}
+
+HELP() {
+	man "$SSHFSM_HELP"
+}
+
+EXIT() {
+	exit 1
+}
+
+MENU_MAIN
